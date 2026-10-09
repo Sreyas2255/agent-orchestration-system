@@ -23,21 +23,71 @@ class AgentState(TypedDict):
 
     review_result: str
 
+    needs_research: bool
+    needs_data: bool
+    needs_code: bool
+    needs_writing: bool
+
 
 def supervisor_node(state: AgentState):
     """
     Supervisor Agent.
 
-    Creates an execution plan by breaking the user's
-    request into specialist subtasks.
+    Creates an execution plan and determines which
+    specialist agents are required.
     """
 
     plan = supervisor_agent(state["user_input"])
 
-    return {
-        "plan": plan
-    }
+    specialists = [
+        subtask.assigned_specialist.lower()
+        for subtask in plan.subtasks
+    ]
 
+    needs_research = "research agent" in specialists
+    needs_data = "data agent" in specialists
+    needs_code = "code agent" in specialists
+    needs_writing = "writing agent" in specialists
+
+    return {
+        "plan": plan,
+        "needs_research": needs_research,
+        "needs_data": needs_data,
+        "needs_code": needs_code,
+        "needs_writing": needs_writing
+    }
+def route_after_supervisor(state: AgentState):
+    if state["needs_research"]:
+        return "research"
+
+    if state["needs_data"]:
+        return "data"
+
+    if state["needs_code"]:
+        return "code"
+
+    return "writing"
+
+
+def route_after_research(state: AgentState):
+    if state["needs_data"]:
+        return "data"
+
+    if state["needs_code"]:
+        return "code"
+
+    return "writing"
+
+
+def route_after_data(state: AgentState):
+    if state["needs_code"]:
+        return "code"
+
+    return "writing"
+
+
+def route_after_code(state: AgentState):
+    return "writing"    
 
 def research_node(state: AgentState):
     """
@@ -218,20 +268,51 @@ builder.add_node("reviewer", reviewer_node)
 
 builder.add_edge(START, "supervisor")
 
-builder.add_edge("supervisor", "research")
 
-builder.add_edge("research", "data")
+builder.add_conditional_edges(
+    "supervisor",
+    route_after_supervisor,
+    {
+        "research": "research",
+        "data": "data",
+        "code": "code",
+        "writing": "writing"
+    }
+)
 
-builder.add_edge("data", "code")
 
-builder.add_edge("code", "collect_results")
+builder.add_conditional_edges(
+    "research",
+    route_after_research,
+    {
+        "data": "data",
+        "code": "code",
+        "writing": "writing"
+    }
+)
 
-builder.add_edge("collect_results", "writing")
 
-# Writing → Reviewer
+builder.add_conditional_edges(
+    "data",
+    route_after_data,
+    {
+        "code": "code",
+        "writing": "writing"
+    }
+)
+
+
+builder.add_conditional_edges(
+    "code",
+    route_after_code,
+    {
+        "writing": "writing"
+    }
+)
+
+
 builder.add_edge("writing", "reviewer")
 
-# Reviewer → End
 builder.add_edge("reviewer", END)
 
 
